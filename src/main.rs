@@ -1,9 +1,11 @@
 mod config;
 
+use clap::{App, Arg};
 use cloudflare::endpoints::dns;
 use cloudflare::framework::async_api::{ApiClient, Client};
 use cloudflare::framework::auth::Credentials;
 use cloudflare::framework::{Environment, HttpApiClientConfig};
+use log::{debug, info};
 use std::net::Ipv4Addr;
 
 // The data structure that the DNS query produces is not in the right shape
@@ -18,8 +20,10 @@ struct SimpleDnsRecord {
 }
 
 async fn get_current_ip(url: &str) -> Ipv4Addr {
+    debug!(target: "cloudflare_dyndns", "Querying current IP: GET {}", url);
     let resp = reqwest::get(url).await.expect("reaching IP server");
     let ip_str = resp.text().await.expect("current IP body");
+    debug!(target: "cloudflare_dyndns", "Current IP is {}", ip_str);
     return ip_str.parse().expect("parsing returned IP");
 }
 
@@ -33,6 +37,7 @@ fn create_cloudflare_client(auth_token: String) -> Client {
 }
 
 async fn get_recorded_ip(client: &Client, zone_id: &str, domain_name: &str) -> SimpleDnsRecord {
+    debug!(target: "cloudflare_dyndns", "Querying DNS record for zone {} and domain {}", zone_id, domain_name);
     let mut list_params = dns::ListDnsRecordsParams::default();
     list_params.name = Some(domain_name.to_string());
 
@@ -49,6 +54,7 @@ async fn get_recorded_ip(client: &Client, zone_id: &str, domain_name: &str) -> S
 
     match dns_record.content {
         dns::DnsContent::A { content } => {
+            debug!(target: "cloudflare_dyndns", "IP in DNS record is {} (id: {})", &content, dns_record.id);
             return SimpleDnsRecord {
                 name: dns_record.name,
                 id: dns_record.id,
@@ -64,6 +70,7 @@ async fn get_recorded_ip(client: &Client, zone_id: &str, domain_name: &str) -> S
 }
 
 async fn update_recorded_ip(client: &Client, zone_id: &str, dns_record: SimpleDnsRecord) {
+    debug!(target: "cloudflare_dyndns", "Updating DNS record");
     let update = dns::UpdateDnsRecord {
         zone_identifier: zone_id,
         identifier: dns_record.id.as_str(),
@@ -84,7 +91,25 @@ async fn update_recorded_ip(client: &Client, zone_id: &str, dns_record: SimpleDn
 
 #[tokio::main]
 async fn main() {
-    let conf = config::Config::from_file("config.json");
+    env_logger::init();
+
+    let matches = App::new("cloudflare_dyndns")
+        .version("0.1")
+        .author("Arjun Guha <arjun@guha-anderson.com>")
+        .about("A dynamic DNS client for CloudFlare")
+        .arg(
+            Arg::with_name("config")
+                .short("c")
+                .long("config")
+                .value_name("FILE")
+                .help("configuration file")
+                .required(true)
+                .takes_value(true),
+        )
+        .get_matches();
+
+    let conf_filename = matches.value_of("config").unwrap();
+    let conf = config::Config::from_file(conf_filename);
 
     let current_ip = get_current_ip(conf.ip_query_addess.as_str()).await;
     let cloudflare = create_cloudflare_client(conf.cloudflare_auth_token);
@@ -95,10 +120,8 @@ async fn main() {
     )
     .await;
     if dns_record.ip != current_ip {
-        eprintln!("Updating IP address to {}", current_ip);
+        info!(target: "cloudflare_dyndns", "Changing IP address from {} to {}", dns_record.ip, current_ip);
         dns_record.ip = current_ip;
         update_recorded_ip(&cloudflare, conf.zone_identifier.as_str(), dns_record).await;
-    } else {
-        eprintln!("IP address unchanged");
     }
 }

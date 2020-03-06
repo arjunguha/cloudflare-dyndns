@@ -13,3 +13,6 @@ tokio = { version = "*", features = [ "macros" ] }
 serde = { version = "*", features = ["derive"] }
 serde_json = "*"
 reqwest = "*"
+clap = "*"
+log = "*"
+env_logger = "*"

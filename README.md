@@ -1,6 +1,8 @@
-# DynamicDNS for CloudFlare
+# Dynamic DNS for CloudFlare
 
-A simple program that updates a DNS record in CloudFlare.
+This program updates a DNS A-record in CloudFlare, using an IP address that it
+receives from a website. It is suitable for "dynamic DNS", e.g., when run as a
+cron job.
 
 # Prerequisites
 
@@ -43,3 +45,24 @@ The program expects a JSON configuration file with the following keys:
 
 - The `<ip_query_address>` is the address of the website that reports your
   IP address.
+
+# Usage
+
+By default, the program runs silently and only displays output on errors:
+
+```
+cloudflare-dyndns --config config.json
+```
+
+To produce output when it changes the DNS entry, run it as follows:
+
+```
+RUST_LOG="cloudflare-dyndns=info" cloudflare-dyndns --config config.json
+```
+
+For more detailed output:
+
+```
+RUST_LOG="cloudflare-dyndns=debug" cloudflare-dyndns --config config.json
+```
+
